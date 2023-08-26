@@ -1,12 +1,19 @@
 use std::{
     error::Error,
     net::SocketAddr,
+    time::Duration
 };
 
 use axum::{
     response::Html,
     Router,
     routing::get,
+    extract::State,
+    http::StatusCode
+};
+use sqlx::{
+    PgPool,
+    postgres::PgPoolOptions
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -22,9 +29,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing::info!("Hello, world!");
 
+    let db_connection_str = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:123456aA@@localhost:5432?sslmode=disable".to_string());
+
+    // setup connection pool
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(3))
+        .connect(&db_connection_str)
+        .await
+        .expect("can't connect to database");
+
     // build our application with a route
     let app = Router::new().
-        route("/", get(handler));
+        route("/", get(handler))
+        .route("/ahihi", get(using_connection_pool_extractor))
+        .with_state(pool);
 
     // run it
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -38,4 +58,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn handler() -> Html<&'static str> {
     Html("<h1>Hello, World!</h1>")
+}
+
+// we can extract the connection pool with `State`
+async fn using_connection_pool_extractor(
+    State(pool): State<PgPool>,
+) -> Result<String, (StatusCode, String)> {
+    sqlx::query_scalar("select 'hello world from pg'")
+        .fetch_one(&pool)
+        .await
+        .map_err(internal_error)
+}
+
+/// Utility function for mapping any error into a `500 Internal Server Error`
+/// response.
+fn internal_error<E>(err: E) -> (StatusCode, String)
+    where
+        E: Error,
+{
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
