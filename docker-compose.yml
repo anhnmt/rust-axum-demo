@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  rust-axum-demo:
+    image: ghcr.io/anhnmt/rust-axum-demo:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=debug
+      - DATABASE_URL=postgres://postgres:123456aA@@citus:5432?sslmode=disable
+    networks:
+      - base-project
+    # If the container goes down, it will restart
+    restart: "always"
+
+networks:
+  base-project:
+    external: true
