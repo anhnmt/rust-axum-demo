@@ -15,6 +15,7 @@ use sqlx::{
     PgPool,
     postgres::PgPoolOptions
 };
+use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -41,8 +42,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("can't connect to database");
 
     // build our application with a route
-    let app = Router::new().
-        route("/", get(handler))
+    let app = Router::new()
+        .route("/", get(handler))
         .route("/ahihi", get(using_connection_pool_extractor))
         .with_state(pool);
 
@@ -51,6 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing::debug!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
         .await?;
 
     Ok(())
@@ -77,4 +79,30 @@ fn internal_error<E>(err: E) -> (StatusCode, String)
         E: Error,
 {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
 }
