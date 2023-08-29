@@ -1,19 +1,20 @@
 use std::{
     error::Error,
     net::SocketAddr,
-    time::Duration
+    time::Duration,
 };
 
 use axum::{
+    extract::State,
+    http::StatusCode,
     response::Html,
+    response::IntoResponse,
     Router,
     routing::get,
-    extract::State,
-    http::StatusCode
 };
 use sqlx::{
     PgPool,
-    postgres::PgPoolOptions
+    postgres::PgPoolOptions,
 };
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -46,6 +47,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/", get(handler))
         .route("/ahihi", get(using_connection_pool_extractor))
         .with_state(pool);
+
+    // add a fallback service for handling routes to unknown paths
+    let app = app.fallback(handler_404);
 
     // run it
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
@@ -81,6 +85,10 @@ fn internal_error<E>(err: E) -> (StatusCode, String)
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
+async fn handler_404() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, "nothing to see here")
+}
+
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()
@@ -89,7 +97,7 @@ async fn shutdown_signal() {
     };
 
     #[cfg(unix)]
-    let terminate = async {
+        let terminate = async {
         signal::unix::signal(signal::unix::SignalKind::terminate())
             .expect("failed to install signal handler")
             .recv()
@@ -97,7 +105,7 @@ async fn shutdown_signal() {
     };
 
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+        let terminate = std::future::pending::<()>();
 
     tokio::select! {
         _ = ctrl_c => {},
