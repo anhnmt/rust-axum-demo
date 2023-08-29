@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   rust-axum-demo:
+    container_name: "rust-axum-demo"
     image: ghcr.io/anhnmt/rust-axum-demo:latest
     build:
       context: .
