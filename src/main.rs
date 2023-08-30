@@ -1,24 +1,26 @@
 use std::{
     error::Error,
     net::SocketAddr,
-    time::Duration
+    time::Duration,
 };
 
 use axum::{
+    extract::State,
+    http::StatusCode,
     response::Html,
+    response::IntoResponse,
     Router,
     routing::get,
-    extract::State,
-    http::StatusCode
 };
 use sqlx::{
     PgPool,
-    postgres::PgPoolOptions
+    postgres::PgPoolOptions,
 };
+use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -41,19 +43,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("can't connect to database");
 
     // build our application with a route
-    let app = Router::new().
-        route("/", get(handler))
+    let app = Router::new()
+        .route("/", get(handler))
         .route("/ahihi", get(using_connection_pool_extractor))
         .with_state(pool);
 
+    // add a fallback service for handling routes to unknown paths
+    let app = app.fallback(handler_404);
+
     // run it
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::debug!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
-        .await?;
-
-    Ok(())
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .expect("can't listening addr")
 }
 
 async fn handler() -> Html<&'static str> {
@@ -77,4 +82,34 @@ fn internal_error<E>(err: E) -> (StatusCode, String)
         E: Error,
 {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
+async fn handler_404() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, "nothing to see here")
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+        let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
 }
