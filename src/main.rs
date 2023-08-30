@@ -20,7 +20,7 @@ use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -57,9 +57,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())
-        .await?;
-
-    Ok(())
+        .await
+        .expect("can't listening addr")
 }
 
 async fn handler() -> Html<&'static str> {
