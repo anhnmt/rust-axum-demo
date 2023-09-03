@@ -1,8 +1,4 @@
-use std::{
-    error::Error,
-    net::SocketAddr,
-    time::Duration,
-};
+use std::{error::Error, net::SocketAddr, time::Duration, str::FromStr, env};
 
 use axum::{
     body::{Body, Bytes},
@@ -40,16 +36,21 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Hello, world!");
+    dotenvy::dotenv().ok();
+    let host = env::var("HOST").expect("HOST is not set in .env file");
+    let port = env::var("PORT").expect("PORT is not set in .env file");
+    let server_url = format!("{host}:{port}");
 
-    let db_connection_str = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:123456aA@@localhost:5432?sslmode=disable".to_string());
+    let db_url = env::var("DB_URL")
+        .expect("DB_URL env not set.");
+
+    tracing::info!("Database connection: {}", db_url);
 
     // setup connection pool
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(3))
-        .connect(&db_connection_str)
+        .connect(&db_url)
         .await
         .expect("can't connect to database");
 
@@ -64,7 +65,7 @@ async fn main() {
     let app = app.fallback(handler_404);
 
     // run it
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from_str(&server_url).unwrap();
     tracing::debug!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
