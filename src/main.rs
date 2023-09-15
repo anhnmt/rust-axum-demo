@@ -1,33 +1,22 @@
-use std::{error::Error, net::SocketAddr, time::Duration, str::FromStr, env};
+use std::{env, error::Error, net::SocketAddr, str::FromStr, time::Duration};
 
 use axum::{
     body::{Body, Bytes},
     extract::State,
-    http::{
-        Request,
-        StatusCode
-    },
-    middleware::{
-        self,
-        Next
-    },
-    response::{
-        IntoResponse,
-        Response,
-        Html
-    },
+    http::{Request, StatusCode},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Response},
+    routing::get,
     Router,
-    routing::get
 };
-use sqlx::{
-    PgPool,
-    postgres::PgPoolOptions,
-};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -36,13 +25,11 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    dotenvy::dotenv().ok();
     let host = env::var("HOST").expect("HOST is not set in .env file");
     let port = env::var("PORT").expect("PORT is not set in .env file");
     let server_url = format!("{host}:{port}");
 
-    let db_url = env::var("DB_URL")
-        .expect("DB_URL env not set.");
+    let db_url = env::var("DB_URL").expect("DB_URL env not set.");
 
     tracing::info!("Database connection: {}", db_url);
 
@@ -91,8 +78,8 @@ async fn using_connection_pool_extractor(
 /// Utility function for mapping any error into a `500 Internal Server Error`
 /// response.
 fn internal_error<E>(err: E) -> (StatusCode, String)
-    where
-        E: Error,
+where
+    E: Error,
 {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
@@ -109,7 +96,7 @@ async fn shutdown_signal() {
     };
 
     #[cfg(unix)]
-        let terminate = async {
+    let terminate = async {
         signal::unix::signal(signal::unix::SignalKind::terminate())
             .expect("failed to install signal handler")
             .recv()
@@ -117,7 +104,7 @@ async fn shutdown_signal() {
     };
 
     #[cfg(not(unix))]
-        let terminate = std::future::pending::<()>();
+    let terminate = std::future::pending::<()>();
 
     tokio::select! {
         _ = ctrl_c => {},
@@ -145,9 +132,9 @@ async fn print_request_response(
 }
 
 async fn buffer_and_print<B>(direction: &str, body: B) -> Result<Bytes, (StatusCode, String)>
-    where
-        B: axum::body::HttpBody<Data=Bytes>,
-        B::Error: std::fmt::Display,
+where
+    B: axum::body::HttpBody<Data = Bytes>,
+    B::Error: std::fmt::Display,
 {
     let bytes = match hyper::body::to_bytes(body).await {
         Ok(bytes) => bytes,
