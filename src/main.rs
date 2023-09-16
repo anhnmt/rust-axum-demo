@@ -1,20 +1,18 @@
-use std::{env, error::Error, net::SocketAddr, str::FromStr, time::Duration};
+use std::{env, net::SocketAddr, str::FromStr};
 
 use axum::{
     body::{Body, Bytes},
-    extract::State,
     http::{Request, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
-    routing::get,
     Router,
+    routing::get,
 };
-use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     tracing_subscriber::registry()
@@ -29,24 +27,14 @@ async fn main() {
     let port = env::var("PORT").expect("PORT is not set in .env file");
     let server_url = format!("{host}:{port}");
 
-    let db_url = env::var("DB_URL").expect("DB_URL env not set.");
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL env not set.");
 
     tracing::info!("Database connection: {}", db_url);
-
-    // setup connection pool
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(Duration::from_secs(3))
-        .connect(&db_url)
-        .await
-        .expect("can't connect to database");
 
     // build our application with a route
     let app = Router::new()
         .route("/", get(handler))
-        .route("/ahihi", get(using_connection_pool_extractor))
-        .layer(middleware::from_fn(print_request_response))
-        .with_state(pool);
+        .layer(middleware::from_fn(print_request_response));
 
     // add a fallback service for handling routes to unknown paths
     let app = app.fallback(handler_404);
@@ -57,31 +45,13 @@ async fn main() {
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("can't listening addr")
+        .await?;
+
+    Ok(())
 }
 
 async fn handler() -> Html<&'static str> {
     Html("<h1>Hello, World!</h1>")
-}
-
-// we can extract the connection pool with `State`
-async fn using_connection_pool_extractor(
-    State(pool): State<PgPool>,
-) -> Result<String, (StatusCode, String)> {
-    sqlx::query_scalar("select 'hello world from pg'")
-        .fetch_one(&pool)
-        .await
-        .map_err(internal_error)
-}
-
-/// Utility function for mapping any error into a `500 Internal Server Error`
-/// response.
-fn internal_error<E>(err: E) -> (StatusCode, String)
-where
-    E: Error,
-{
-    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
 async fn handler_404() -> impl IntoResponse {
@@ -96,7 +66,7 @@ async fn shutdown_signal() {
     };
 
     #[cfg(unix)]
-    let terminate = async {
+        let terminate = async {
         signal::unix::signal(signal::unix::SignalKind::terminate())
             .expect("failed to install signal handler")
             .recv()
@@ -104,7 +74,7 @@ async fn shutdown_signal() {
     };
 
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+        let terminate = std::future::pending::<()>();
 
     tokio::select! {
         _ = ctrl_c => {},
@@ -132,9 +102,9 @@ async fn print_request_response(
 }
 
 async fn buffer_and_print<B>(direction: &str, body: B) -> Result<Bytes, (StatusCode, String)>
-where
-    B: axum::body::HttpBody<Data = Bytes>,
-    B::Error: std::fmt::Display,
+    where
+        B: axum::body::HttpBody<Data=Bytes>,
+        B::Error: std::fmt::Display,
 {
     let bytes = match hyper::body::to_bytes(body).await {
         Ok(bytes) => bytes,

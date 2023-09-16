@@ -5,12 +5,18 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = [".", "migration", "entity"]
+
 [dependencies]
-axum = "0.6"
-tokio = { version = "1.0", features = ["full"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "any", "postgres"] }
-hyper = { version = "0.14", features = ["full"] }
+entity = { path = "./entity" }
+migration = { path = "./migration" }
+tokio = { version = "1.29.0", features = ["full"] }
+axum = "0.6.19"
+anyhow = "1.0.71"
 dotenvy = "0.15.7"
-anyhow = "1.0"
+serde = "1.0.175"
+serde_json = "1.0.102"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+hyper = { version = "0.14", features = ["full"] }
